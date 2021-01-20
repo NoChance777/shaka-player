@@ -359,7 +359,14 @@ class CssLinter(object):
       return True
 
     stylelint = shakaBuildHelpers.get_node_binary('stylelint')
-    cmd_line = stylelint + ['--config', self.config_path] + self.source_files
+    cmd_line = stylelint + [
+        '--config', self.config_path,
+        # The "default ignores" is something like **/node_modules/**, which
+        # means that if we run the build scripts from inside the installed node
+        # modules of shaka-player, all our sources will be filtered out if we
+        # don't disable the default ignores in stylelint.
+        '--disable-default-ignores',
+    ] + self.source_files
 
     if fix:
       cmd_line += ['--fix']
@@ -419,7 +426,7 @@ class Jsdoc(object):
 
     # To avoid getting out of sync with the source files jsdoc actually reads,
     # parse the config file and locate all source files based on that.
-    with open(self.config_path, 'rb') as f:
+    with open(self.config_path, 'r') as f:
       config = json.load(f)
     for path in config['source']['include']:
       full_path = _get_source_path(path)

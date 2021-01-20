@@ -32,6 +32,11 @@ import subprocess
 import sys
 import time
 
+# Python 3 no longer has a separate unicode type.  For type-checking done in
+# get_node_binary, create an alias to the str type.
+if sys.version_info[0] == 3:
+  unicode = str
+
 
 def _node_modules_last_update_path():
   return os.path.join(get_source_base(), 'node_modules', '.last_update')
@@ -294,7 +299,16 @@ def get_node_binary(module_name, bin_name=None):
   if os.path.isdir(path):
     json_path = os.path.join(path, 'package.json')
     package_data = json.load(open_file(json_path, 'r'))
-    bin_path = os.path.join(path, package_data['bin'][bin_name])
+    bin_data = package_data['bin']
+
+    if type(bin_data) is str or type(bin_data) is unicode:
+      # There's only one binary here.
+      bin_rel_path = bin_data
+    else:
+      # It's a dictionary, so look up the specific binary we want.
+      bin_rel_path = bin_data[bin_name]
+
+    bin_path = os.path.join(path, bin_rel_path)
     return ['node', bin_path]
 
   # Not found locally, assume it can be found in os.environ['PATH'].
