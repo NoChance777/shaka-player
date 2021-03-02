@@ -380,15 +380,15 @@ describe('DashParser Manifest', () => {
         const stream1 = manifest.variants[0].video;
         const stream2 = manifest.variants[1].video;
 
-        const expectedClosedCaptions1 = new Map(
-            [['CC1', shaka.util.LanguageUtils.normalize('eng')],
-              ['CC3', shaka.util.LanguageUtils.normalize('swe')]]
-        );
+        const expectedClosedCaptions1 = new Map([
+          ['CC1', shaka.util.LanguageUtils.normalize('eng')],
+          ['CC3', shaka.util.LanguageUtils.normalize('swe')],
+        ]);
 
-        const expectedClosedCaptions2 = new Map(
-            [['svc1', shaka.util.LanguageUtils.normalize('bos')],
-              ['svc3', shaka.util.LanguageUtils.normalize('cze')]]
-        );
+        const expectedClosedCaptions2 = new Map([
+          ['svc1', shaka.util.LanguageUtils.normalize('bos')],
+          ['svc3', shaka.util.LanguageUtils.normalize('cze')],
+        ]);
         expect(stream1.closedCaptions).toEqual(expectedClosedCaptions1);
         expect(stream2.closedCaptions).toEqual(expectedClosedCaptions2);
       });
@@ -414,10 +414,10 @@ describe('DashParser Manifest', () => {
         /** @type {shaka.extern.Manifest} */
         const manifest = await parser.start('dummy://foo', playerInterface);
         const stream = manifest.variants[0].video;
-        const expectedClosedCaptions = new Map(
-            [['svc1', shaka.util.LanguageUtils.normalize('eng')],
-              ['svc3', shaka.util.LanguageUtils.normalize('swe')]]
-        );
+        const expectedClosedCaptions = new Map([
+          ['svc1', shaka.util.LanguageUtils.normalize('eng')],
+          ['svc3', shaka.util.LanguageUtils.normalize('swe')],
+        ]);
         expect(stream.closedCaptions).toEqual(expectedClosedCaptions);
       });
 
@@ -442,10 +442,10 @@ describe('DashParser Manifest', () => {
         /** @type {shaka.extern.Manifest} */
         const manifest = await parser.start('dummy://foo', playerInterface);
         const stream = manifest.variants[0].video;
-        const expectedClosedCaptions = new Map(
-            [['svc1', shaka.util.LanguageUtils.normalize('eng')],
-              ['svc2', shaka.util.LanguageUtils.normalize('swe')]]
-        );
+        const expectedClosedCaptions = new Map([
+          ['svc1', shaka.util.LanguageUtils.normalize('eng')],
+          ['svc2', shaka.util.LanguageUtils.normalize('swe')],
+        ]);
         expect(stream.closedCaptions).toEqual(expectedClosedCaptions);
       });
 
@@ -471,6 +471,30 @@ describe('DashParser Manifest', () => {
     const manifest = await parser.start('dummy://foo', playerInterface);
     const stream = manifest.variants[0].audio;
     expect(stream.mimeType).toBe('audio/eac3-joc');
+  });
+
+  it('Detects spatial audio', async () => {
+    const idUri = 'tag:dolby.com,2018:dash:EC3_ExtensionType:2018';
+    const source = [
+      '<MPD>',
+      '  <Period duration="PT30M">',
+      '    <AdaptationSet mimeType="audio/mp4" lang="\u2603">',
+      '      <Representation bandwidth="500">',
+      '        <SupplementalProperty schemeIdUri="' + idUri + '" value="JOC"/>',
+      '        <BaseURL>http://example.com</BaseURL>',
+      '        <SegmentTemplate media="2.mp4" duration="1" />',
+      '      </Representation>',
+      '    </AdaptationSet>',
+      '  </Period>',
+      '</MPD>',
+    ].join('\n');
+
+    fakeNetEngine.setResponseText('dummy://foo', source);
+
+    /** @type {shaka.extern.Manifest} */
+    const manifest = await parser.start('dummy://foo', playerInterface);
+    const stream = manifest.variants[0].audio;
+    expect(stream.spatialAudio).toBe(true);
   });
 
   it('correctly parses CEA-608 closed caption tags without channel numbers',
@@ -503,19 +527,17 @@ describe('DashParser Manifest', () => {
         const stream1 = manifest.variants[0].video;
         const stream2 = manifest.variants[1].video;
 
-        const expectedClosedCaptions1 = new Map(
-            [['CC1', shaka.util.LanguageUtils.normalize('eng')],
-              ['CC3', shaka.util.LanguageUtils.normalize('swe')]]
-        );
+        const expectedClosedCaptions1 = new Map([
+          ['CC1', shaka.util.LanguageUtils.normalize('eng')],
+          ['CC3', shaka.util.LanguageUtils.normalize('swe')],
+        ]);
 
-        const expectedClosedCaptions2 = new Map(
-            [
-              ['CC1', shaka.util.LanguageUtils.normalize('eng')],
-              ['CC2', shaka.util.LanguageUtils.normalize('swe')],
-              ['CC3', shaka.util.LanguageUtils.normalize('fre')],
-              ['CC4', shaka.util.LanguageUtils.normalize('pol')],
-            ]
-        );
+        const expectedClosedCaptions2 = new Map([
+          ['CC1', shaka.util.LanguageUtils.normalize('eng')],
+          ['CC2', shaka.util.LanguageUtils.normalize('swe')],
+          ['CC3', shaka.util.LanguageUtils.normalize('fre')],
+          ['CC4', shaka.util.LanguageUtils.normalize('pol')],
+        ]);
 
         expect(stream1.closedCaptions).toEqual(expectedClosedCaptions1);
         expect(stream2.closedCaptions).toEqual(expectedClosedCaptions2);
@@ -1601,6 +1623,58 @@ describe('DashParser Manifest', () => {
     expect(minBufferTime).toBe(75);
   });
 
+  it('honors the ignoreMaxSegmentDuration config', async () => {
+    const manifestText = [
+      '<MPD maxSegmentDuration="PT5S">',
+      '  <Period id="1" duration="PT30S">',
+      '    <AdaptationSet id="1" mimeType="video/mp4">',
+      '      <Representation id="video-sd" width="640" height="480">',
+      '        <BaseURL>v-sd.mp4</BaseURL>',
+      '        <SegmentBase indexRange="100-200" />',
+      '      </Representation>',
+      '    </AdaptationSet>',
+      '  </Period>',
+      '</MPD>',
+    ].join('\n');
+
+    fakeNetEngine.setResponseText('dummy://foo', manifestText);
+    const config = shaka.util.PlayerConfiguration.createDefault().manifest;
+    config.dash.ignoreMaxSegmentDuration = true;
+    parser.configure(config);
+
+    /** @type {shaka.extern.Manifest} */
+    const manifest = await parser.start('dummy://foo', playerInterface);
+    const maxSegmentDuration =
+        manifest.presentationTimeline.getMaxSegmentDuration();
+    expect(maxSegmentDuration).toBe(1);
+  });
+
+  it('gets manifest value if ignoreMaxSegmentDuration is false', async () => {
+    const manifestText = [
+      '<MPD maxSegmentDuration="PT5S">',
+      '  <Period id="1" duration="PT30S">',
+      '    <AdaptationSet id="1" mimeType="video/mp4">',
+      '      <Representation id="video-sd" width="640" height="480">',
+      '        <BaseURL>v-sd.mp4</BaseURL>',
+      '        <SegmentBase indexRange="100-200" />',
+      '      </Representation>',
+      '    </AdaptationSet>',
+      '  </Period>',
+      '</MPD>',
+    ].join('\n');
+
+    fakeNetEngine.setResponseText('dummy://foo', manifestText);
+    const config = shaka.util.PlayerConfiguration.createDefault().manifest;
+    config.dash.ignoreMaxSegmentDuration = false;
+    parser.configure(config);
+
+    /** @type {shaka.extern.Manifest} */
+    const manifest = await parser.start('dummy://foo', playerInterface);
+    const maxSegmentDuration =
+        manifest.presentationTimeline.getMaxSegmentDuration();
+    expect(maxSegmentDuration).toBe(5);
+  });
+
   it('does not set presentationDelay to NaN', async () => {
     // NOTE: This is a regression test for #2015. It ensures that, if
     // ignoreMinBufferTime is true and there is no suggestedPresentationDelay,
@@ -1851,5 +1925,64 @@ describe('DashParser Manifest', () => {
 
     expect(uri0).toBe('http://example.com/r0/1.mp4');
     expect(uri1).toBe('http://example.com/r1/1.mp4');
+  });
+
+  // b/179025415: A "future" period (past the segment availability window end)
+  // would cause us to generate bogus segment references for that period.  This
+  // would happen upon update (once per segment duration), but not on initial
+  // load.
+  it('creates no references for future Periods', async () => {
+    // Pretend the live stream started 10 seconds ago.  This is long enough to
+    // have segments (1s each), but not long enough to have segments in the
+    // second period (30s into the live stream).
+    const availabilityStartTimeMilliseconds = Date.now() - 10e3;
+    const availabilityStartTime =
+        (new Date(availabilityStartTimeMilliseconds)).toISOString();
+    const manifestText = [
+      `<MPD type="dynamic" availabilityStartTime="${availabilityStartTime}">`,
+      '  <Period id="1" duration="PT30S">',
+      '    <AdaptationSet id="2" mimeType="video/mp4">',
+      '      <SegmentTemplate media="$Number$.mp4" duration="1" />',
+      '      <Representation id="3" width="640" height="480">',
+      '        <BaseURL>http://example.com/p1/</BaseURL>',
+      '      </Representation>',
+      '    </AdaptationSet>',
+      '  </Period>',
+      '  <Period id="4" duration="PT30S">',
+      '    <AdaptationSet id="5" mimeType="video/mp4">',
+      '      <SegmentTemplate media="$Number$.mp4" duration="1" />',
+      '      <Representation id="6" width="640" height="480">',
+      '        <BaseURL>http://example.com/p2/</BaseURL>',
+      '      </Representation>',
+      '    </AdaptationSet>',
+      '  </Period>',
+      '</MPD>',
+    ].join('\n');
+
+    fakeNetEngine.setResponseText('dummy://foo', manifestText);
+
+    /** @type {shaka.extern.Manifest} */
+    const manifest = await parser.start('dummy://foo', playerInterface);
+
+    const video0 = manifest.variants[0].video;
+    await video0.createSegmentIndex();
+
+    // Wait two segment durations, so that the updateEvery callback fires.
+    // In the original bug, we generated bogus references during update.
+    await shaka.test.Util.delay(2);
+
+    goog.asserts.assert(video0.segmentIndex, 'Null segmentIndex!');
+    const segments = Array.from(video0.segmentIndex);
+
+    // There should be some segments, but not more than the 30 that would appear
+    // in the complete first period.
+    expect(segments.length).toBeGreaterThan(0);
+    expect(segments.length).toBeLessThanOrEqual(30);
+
+    // We should also not find /p2/ (the second period URL) in any of them.
+    const segmentUris = segments.map((s) => s.getUris()[0]);
+    for (const uri of segmentUris) {
+      expect(uri).not.toContain('/p2/');
+    }
   });
 });

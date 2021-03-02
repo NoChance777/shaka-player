@@ -578,14 +578,58 @@ describe('VttTextParser', () => {
         {periodStart: 0, segmentStart: 95550, segmentEnd: 95560});
   });
 
-  it('skips style blocks', () => {
+  it('supports global style blocks', () => {
     verifyHelper(
         [
-          {startTime: 20, endTime: 40, payload: 'Test'},
-          {startTime: 40, endTime: 50, payload: 'Test2'},
+          {
+            startTime: 20,
+            endTime: 40,
+            payload: 'Test',
+            color: 'cyan',
+            fontSize: '10px',
+          },
+          {
+            startTime: 40,
+            endTime: 50,
+            payload: 'Test2',
+            color: 'cyan',
+            fontSize: '10px',
+          },
         ],
         'WEBVTT\n\n' +
-        'STYLE\n::cue(.cyan) { color: cyan; }\n\n' +
+        'STYLE\n' +
+        '::cue {\n' +
+        'color: cyan;\n'+
+        'font-size: 10px;\n'+
+        '}\n\n' +
+        '00:00:20.000 --> 00:00:40.000\n' +
+        'Test\n\n' +
+        '00:00:40.000 --> 00:00:50.000\n' +
+        'Test2',
+        {periodStart: 0, segmentStart: 0, segmentEnd: 0});
+  });
+
+  it('supports global style blocks without blank lines', () => {
+    verifyHelper(
+        [
+          {
+            startTime: 20,
+            endTime: 40,
+            payload: 'Test',
+            color: 'cyan',
+            fontSize: '10px',
+          },
+          {
+            startTime: 40,
+            endTime: 50,
+            payload: 'Test2',
+            color: 'cyan',
+            fontSize: '10px',
+          },
+        ],
+        'WEBVTT\n\n' +
+        'STYLE\n' +
+        '::cue { color: cyan; font-size: 10px; }\n\n' +
         '00:00:20.000 --> 00:00:40.000\n' +
         'Test\n\n' +
         '00:00:40.000 --> 00:00:50.000\n' +
@@ -734,6 +778,34 @@ describe('VttTextParser', () => {
         {periodStart: 0, segmentStart: 0, segmentEnd: 0});
   });
 
+  it('supports specific style blocks', () => {
+    verifyHelper(
+        [
+          {
+            startTime: 20,
+            endTime: 40,
+            payload: '',
+            nestedCues: [
+              {
+                startTime: 20,
+                endTime: 40,
+                payload: 'Test',
+                color: 'cyan',
+                fontWeight: Cue.fontWeight.BOLD,
+              },
+            ],
+          },
+          {startTime: 40, endTime: 50, payload: 'Test2'},
+        ],
+        'WEBVTT\n\n' +
+        'STYLE\n::cue(b) { color: cyan; }\n\n' +
+        '00:00:20.000 --> 00:00:40.000\n' +
+        '<b>Test</b>\n\n' +
+        '00:00:40.000 --> 00:00:50.000\n' +
+        'Test2',
+        {periodStart: 0, segmentStart: 0, segmentEnd: 0});
+  });
+
   it('supports only two digits in the timestamp', () => {
     verifyHelper(
         [
@@ -759,8 +831,7 @@ describe('VttTextParser', () => {
     const expected = cues.map((cue) => {
       if (cue.nestedCues) {
         cue.nestedCues = cue.nestedCues.map(
-            (nestedCue) => jasmine.objectContaining(nestedCue)
-        );
+            (nestedCue) => jasmine.objectContaining(nestedCue));
       }
       return jasmine.objectContaining(cue);
     });

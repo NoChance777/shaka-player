@@ -856,6 +856,36 @@ describe('StreamingEngine', () => {
     expect(mediaSourceEngine.appendBuffer).toHaveBeenCalled();
   });
 
+  // https://github.com/google/shaka-player/issues/2957
+  it('plays with fewer text segments', async () => {
+    setupVod();
+
+    // Only use one segment for text, which will buffer less than the others.
+    segmentData['text'].segments.splice(1, 3);
+    await textStream.createSegmentIndex();
+    const oldGet = /** @type {?} */ (textStream.segmentIndex.get);
+    textStream.segmentIndex.get = (idx) => {
+      return idx > 0 ? null : oldGet(idx);
+    };
+
+    mediaSourceEngine = new shaka.test.FakeMediaSourceEngine(segmentData);
+    createStreamingEngine();
+
+    // Here we go!
+    streamingEngine.switchVariant(variant);
+    streamingEngine.switchTextStream(textStream);
+    await streamingEngine.start();
+    playing = true;
+
+    await runTest();
+
+    expect(mediaSourceEngine.segments).toEqual({
+      audio: [true, true, true, true],
+      video: [true, true, true, true],
+      text: [true],
+    });
+  });
+
   describe('switchVariant/switchTextStream', () => {
     let initialVariant;
     let sameAudioVariant;
@@ -2571,6 +2601,27 @@ describe('StreamingEngine', () => {
 
     it('raises an event for registered embedded emsg boxes', async () => {
       segmentData[ContentType.VIDEO].segments[0] = emsgSegment;
+      videoStream.emsgSchemeIdUris = [emsgObj.schemeIdUri];
+
+      // Here we go!
+      streamingEngine.switchVariant(variant);
+      streamingEngine.switchTextStream(textStream);
+      await streamingEngine.start();
+      playing = true;
+      await runTest();
+
+      expect(onEvent).toHaveBeenCalledTimes(1);
+
+      const event = onEvent.calls.argsFor(0)[0];
+      expect(event.detail).toEqual(emsgObj);
+    });
+
+    it('raises an event for registered embedded v1 emsg boxes ', async () => {
+      // same event but verison 1.
+      const v1EmsgSegment = Uint8ArrayUtils.fromHex(
+          '0000003f656d7367010000000000000100000000000000080000ffff00000001' +
+          '666f6f3a6261723a637573746f6d64617461736368656d6500310074657374');
+      segmentData[ContentType.VIDEO].segments[0] = v1EmsgSegment;
       videoStream.emsgSchemeIdUris = [emsgObj.schemeIdUri];
 
       // Here we go!
