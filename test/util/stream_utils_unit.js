@@ -6,12 +6,25 @@
 
 goog.require('shaka.test.FakeDrmEngine');
 goog.require('shaka.test.ManifestGenerator');
+goog.require('shaka.test.Util');
 goog.require('shaka.util.StreamUtils');
 
 describe('StreamUtils', () => {
   const StreamUtils = shaka.util.StreamUtils;
 
   let manifest;
+  /** @type {!jasmine.Spy} */
+  let decodingInfoSpy;
+
+  const originalDecodingInfo = navigator.mediaCapabilities.decodingInfo;
+
+  beforeEach(() => {
+    decodingInfoSpy = jasmine.createSpy('decodingInfo');
+  });
+
+  afterEach(() => {
+    navigator.mediaCapabilities.decodingInfo = originalDecodingInfo;
+  });
 
   describe('filterStreamsByLanguageAndRole', () => {
     it('chooses text streams in user\'s preferred language', () => {
@@ -464,6 +477,52 @@ describe('StreamUtils', () => {
     });
   });
 
+  describe('getDecodingInfosForVariants', () => {
+    it('for multiplexd content', async () => {
+      manifest = shaka.test.ManifestGenerator.generate((manifest) => {
+        manifest.addVariant(0, (variant) => {
+          variant.addVideo(1, (stream) => {
+            stream.mime('video/mp2t', 'avc1.4d400d,mp4a.40.2');
+          });
+        });
+      });
+
+      await StreamUtils.getDecodingInfosForVariants(manifest.variants,
+          /* usePersistentLicenses= */false);
+      expect(manifest.variants.length).toBeTruthy();
+      expect(manifest.variants[0].decodingInfos.length).toBe(1);
+      expect(manifest.variants[0].decodingInfos[0].supported).toBeTruthy();
+    });
+
+    it('handles decodingInfo exception', async () => {
+      navigator.mediaCapabilities.decodingInfo =
+          shaka.test.Util.spyFunc(decodingInfoSpy);
+      // If decodingInfo() fails, setDecodingInfo should finish without throwing
+      // an exception, and the variant should have no decodingInfo result.
+      decodingInfoSpy.and.throwError('MediaCapabilties.decodingInfo failed.');
+
+      manifest = shaka.test.ManifestGenerator.generate((manifest) => {
+        manifest.addVariant(0, (variant) => {
+          variant.addVideo(1, (stream) => {
+            stream.mime('video/mp4', 'avc1');
+            stream.encrypted = true;
+            stream.mime('video/mp4', 'avc1.4d400d');
+          });
+          variant.addAudio(2, (stream) => {
+            stream.mime('audio/mp4', 'mp4a.40.2');
+            stream.encrypted = true;
+            stream.addDrmInfo('com.widevine.alpha');
+          });
+        });
+      });
+
+      await StreamUtils.getDecodingInfosForVariants(manifest.variants,
+          /* usePersistentLicenses= */false);
+      expect(manifest.variants.length).toBe(1);
+      expect(manifest.variants[0].decodingInfos.length).toBe(0);
+    });
+  });
+
   describe('filterManifest', () => {
     let fakeDrmEngine;
 
@@ -497,6 +556,82 @@ describe('StreamUtils', () => {
       expect(manifest.textStreams.length).toBe(2);
       expect(manifest.textStreams[0].id).toBe(1);
       expect(manifest.textStreams[1].id).toBe(2);
+    });
+
+    it('filters image streams', async () => {
+      manifest = shaka.test.ManifestGenerator.generate((manifest) => {
+        manifest.addImageStream(1, (stream) => {
+          stream.mimeType = 'image/svg+xml';
+        });
+        manifest.addImageStream(2, (stream) => {
+          stream.mimeType = 'image/png';
+        });
+        manifest.addImageStream(3, (stream) => {
+          stream.mimeType = 'image/jpeg';
+        });
+        manifest.addImageStream(4, (stream) => {
+          stream.mimeType = 'image/bogus';
+        });
+      });
+
+      const noVariant = null;
+      await shaka.util.StreamUtils.filterManifest(
+          fakeDrmEngine, noVariant, manifest);
+
+      // Covers a regression in which we would remove streams with codecs.
+      // The last two streams should be removed because their full MIME types
+      // are bogus.
+      expect(manifest.imageStreams.length).toBe(3);
+      expect(manifest.imageStreams[0].id).toBe(1);
+      expect(manifest.imageStreams[1].id).toBe(2);
+      expect(manifest.imageStreams[2].id).toBe(3);
+    });
+
+    it('filters transport streams', async () => {
+      manifest = shaka.test.ManifestGenerator.generate((manifest) => {
+        manifest.addVariant(0, (variant) => {
+          variant.language = 'en';
+          variant.addVideo(1, (stream) => {
+            stream.mime('video/mp2t', 'avc1.42c00d');
+          });
+          variant.addAudio(2, (stream) => {
+            stream.mime('video/mp2t', 'mp4a.40.2');
+          });
+        });
+      });
+
+      await shaka.util.StreamUtils.filterManifest(
+          fakeDrmEngine, /* currentVariant= */ null, manifest,
+          /* useMediaCapabilities= */ true);
+
+      // Covers a regression in which we would remove streams with codecs.
+      // The last two streams should be removed because their full MIME types
+      // are bogus.
+      expect(manifest.variants.length).toBe(1);
+      expect(manifest.variants[0].video.id).toBe(1);
+      expect(manifest.variants[0].audio.id).toBe(2);
+    });
+
+    // MediaCapabilities decodingInfo requires valid bandwidth, frameRate,
+    // width, height as part of the input. Fill in default values if those info
+    // are not available from the manifest.
+    it('tolerates empty bandwidth, frameRate, width, height', async () => {
+      manifest = shaka.test.ManifestGenerator.generate((manifest) => {
+        manifest.addVariant(0, (variant) => {
+          variant.language = 'en';
+          variant.addVideo(1, (stream) => {
+            stream.codecs = 'avc1.4d401f';
+          });
+          variant.addAudio(2, (stream) => {
+            stream.codecs = 'mp4a.40.2';
+          });
+        });
+      });
+
+      await shaka.util.StreamUtils.filterManifest(
+          fakeDrmEngine, /* currentVariant= */ null, manifest,
+          /* useMediaCapabilities= */ true);
+      expect(manifest.variants.length).toBe(1);
     });
   });
 

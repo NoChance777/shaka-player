@@ -18,6 +18,7 @@ goog.require('shaka.util.BufferUtils');
 goog.require('shaka.util.Error');
 goog.require('shaka.util.Platform');
 goog.require('shaka.util.PlayerConfiguration');
+goog.require('shaka.util.Platform');
 goog.require('shaka.util.PublicPromise');
 goog.require('shaka.util.StringUtils');
 goog.require('shaka.util.Uint8ArrayUtils');
@@ -29,9 +30,12 @@ describe('DrmEngine', () => {
       navigator.requestMediaKeySystemAccess;
   const originalLogError = shaka.log.error;
   const originalBatchTime = shaka.media.DrmEngine.KEY_STATUS_BATCH_TIME;
+  const originalDecodingInfo = navigator.mediaCapabilities.decodingInfo;
 
   /** @type {!jasmine.Spy} */
   let requestMediaKeySystemAccessSpy;
+  /** @type {!jasmine.Spy} */
+  let decodingInfoSpy;
   /** @type {!jasmine.Spy} */
   let logErrorSpy;
   /** @type {!jasmine.Spy} */
@@ -74,6 +78,9 @@ describe('DrmEngine', () => {
         jasmine.createSpy('requestMediaKeySystemAccess');
     navigator.requestMediaKeySystemAccess =
         shaka.test.Util.spyFunc(requestMediaKeySystemAccessSpy);
+    decodingInfoSpy = jasmine.createSpy('decodingInfo');
+    navigator.mediaCapabilities.decodingInfo =
+        shaka.test.Util.spyFunc(decodingInfoSpy);
 
     logErrorSpy = jasmine.createSpy('shaka.log.error');
     shaka.log.error = shaka.test.Util.spyFunc(logErrorSpy);
@@ -149,6 +156,7 @@ describe('DrmEngine', () => {
 
     navigator.requestMediaKeySystemAccess =
         originalRequestMediaKeySystemAccess;
+    navigator.mediaCapabilities.decodingInfo = originalDecodingInfo;
     shaka.log.error = originalLogError;
   });
 
@@ -414,6 +422,7 @@ describe('DrmEngine', () => {
             distinctiveIdentifier: 'optional',
             persistentState: 'optional',
             sessionTypes: ['temporary'],
+            initDataTypes: ['cenc'],
           })]);
       expect(requestMediaKeySystemAccessSpy)
           .toHaveBeenCalledWith('drm.def', [jasmine.objectContaining({
@@ -424,6 +433,7 @@ describe('DrmEngine', () => {
             distinctiveIdentifier: 'optional',
             persistentState: 'optional',
             sessionTypes: ['temporary'],
+            initDataTypes: ['cenc'],
           })]);
     });
 
@@ -442,6 +452,7 @@ describe('DrmEngine', () => {
           distinctiveIdentifier: 'optional',
           persistentState: 'required',
           sessionTypes: ['persistent-license'],
+          initDataTypes: ['cenc'],
         }),
       ]);
       expect(requestMediaKeySystemAccessSpy).toHaveBeenCalledWith('drm.def', [
@@ -449,6 +460,7 @@ describe('DrmEngine', () => {
           distinctiveIdentifier: 'optional',
           persistentState: 'required',
           sessionTypes: ['persistent-license'],
+          initDataTypes: ['cenc'],
         }),
       ]);
     });
@@ -534,6 +546,7 @@ describe('DrmEngine', () => {
         audioRobustness: 'good',
         videoRobustness: 'really_really_ridiculously_good',
         serverCertificate: null,
+        sessionType: 'persistent-license',
         individualizationServer: '',
         distinctiveIdentifierRequired: true,
         persistentStateRequired: true,
@@ -557,6 +570,8 @@ describe('DrmEngine', () => {
             })],
             distinctiveIdentifier: 'required',
             persistentState: 'required',
+            sessionTypes: ['persistent-license'],
+            initDataTypes: ['cenc'],
           })]);
     });
 
@@ -589,6 +604,7 @@ describe('DrmEngine', () => {
         audioRobustness: 'bad',
         videoRobustness: 'so_bad_it_hurts',
         serverCertificate: null,
+        sessionType: '',
         individualizationServer: '',
         distinctiveIdentifierRequired: false,
         persistentStateRequired: false,
@@ -612,6 +628,29 @@ describe('DrmEngine', () => {
             })],
             distinctiveIdentifier: 'required',
             persistentState: 'required',
+            initDataTypes: ['cenc'],
+          })]);
+    });
+
+    it('sets unique initDataTypes if specified from the initData', async () => {
+      tweakDrmInfos((drmInfos) => {
+        drmInfos[0].initData = [
+          {initDataType: 'very_nice', initData: new Uint8Array(5), keyId: null},
+          {initDataType: 'very_nice', initData: new Uint8Array(5), keyId: null},
+        ];
+      });
+
+      drmEngine.configure(config);
+
+      const variants = manifest.variants;
+
+      await drmEngine.initForPlayback(variants, manifest.offlineSessionIds);
+
+      expect(drmEngine.initialized()).toBe(true);
+      expect(requestMediaKeySystemAccessSpy).toHaveBeenCalledTimes(1);
+      expect(requestMediaKeySystemAccessSpy)
+          .toHaveBeenCalledWith('drm.abc', [jasmine.objectContaining({
+            initDataTypes: ['very_nice'],
           })]);
     });
 
@@ -1482,8 +1521,41 @@ describe('DrmEngine', () => {
       mockVideo.setMediaKeys.calls.reset();
       await drmEngine.destroy();
       expect(session1.close).toHaveBeenCalled();
+      expect(session1.remove).not.toHaveBeenCalled();
       expect(session2.close).toHaveBeenCalled();
+      expect(session2.remove).not.toHaveBeenCalled();
       expect(mockVideo.setMediaKeys).toHaveBeenCalledWith(null);
+    });
+
+    it('tears down & removes active persistent sessions', async () => {
+      config.advanced['drm.abc'] = createAdvancedConfig(null);
+      config.advanced['drm.abc'].sessionType = 'persistent-license';
+
+      drmEngine.configure(config);
+
+      await initAndAttach();
+      const initData1 = new Uint8Array(1);
+      const initData2 = new Uint8Array(2);
+      mockVideo.on['encrypted'](
+          {initDataType: 'webm', initData: initData1, keyId: null});
+      mockVideo.on['encrypted'](
+          {initDataType: 'webm', initData: initData2, keyId: null});
+
+      const message = new Uint8Array(0);
+      session1.on['message']({target: session1, message: message});
+      session1.update.and.returnValue(Promise.resolve());
+      session2.on['message']({target: session2, message: message});
+      session2.update.and.returnValue(Promise.resolve());
+
+      await shaka.test.Util.shortDelay();
+      mockVideo.setMediaKeys.calls.reset();
+      await drmEngine.destroy();
+
+      expect(session1.close).not.toHaveBeenCalled();
+      expect(session1.remove).toHaveBeenCalled();
+
+      expect(session2.close).not.toHaveBeenCalled();
+      expect(session2.remove).toHaveBeenCalled();
     });
 
     it('swallows errors when closing sessions', async () => {
@@ -1843,6 +1915,24 @@ describe('DrmEngine', () => {
     });
   });  // describe('destroy')
 
+  describe('isPlayReadyKeySystem', () => {
+    it('should return true for MS & Chromecast PlayReady', () => {
+      expect(shaka.media.DrmEngine.isPlayReadyKeySystem(
+          'com.microsoft.playready')).toBe(true);
+      expect(shaka.media.DrmEngine.isPlayReadyKeySystem(
+          'com.microsoft.playready.anything')).toBe(true);
+      expect(shaka.media.DrmEngine.isPlayReadyKeySystem(
+          'com.chromecast.playready')).toBe(true);
+    });
+
+    it('should return false for non-PlayReady key systems', () => {
+      expect(shaka.media.DrmEngine.isPlayReadyKeySystem(
+          'com.widevine.alpha')).toBe(false);
+      expect(shaka.media.DrmEngine.isPlayReadyKeySystem(
+          'com.abc.playready')).toBe(false);
+    });
+  });
+
   describe('getDrmInfo', () => {
     it('includes correct info', async () => {
       // Leave only one drmInfo
@@ -1870,6 +1960,7 @@ describe('DrmEngine', () => {
         videoRobustness: 'really_really_ridiculously_good',
         distinctiveIdentifierRequired: true,
         serverCertificate: null,
+        sessionType: '',
         individualizationServer: '',
         persistentStateRequired: true,
       };
@@ -1887,6 +1978,7 @@ describe('DrmEngine', () => {
         audioRobustness: 'good',
         videoRobustness: 'really_really_ridiculously_good',
         serverCertificate: undefined,
+        sessionType: 'temporary',
         initData: [],
         keyIds: new Set(['deadbeefdeadbeefdeadbeefdeadbeef']),
       });
@@ -2145,12 +2237,37 @@ describe('DrmEngine', () => {
   }
 
   function setRequestMediaKeySystemAccessSpy(acceptableKeySystems) {
+    // TODO: Setting both the requestMediaKeySystemAccessSpy and decodingInfoSpy
+    // as a temporary solution. Only decodingInfoSpy is needed once we use
+    // decodingInfo API to get mediaKeySystemAccess.
+    setDecodingInfoSpy(acceptableKeySystems);
     requestMediaKeySystemAccessSpy.and.callFake((keySystem) => {
       if (!acceptableKeySystems.includes(keySystem)) {
         return Promise.reject(new Error(''));
       }
       mockMediaKeySystemAccess.keySystem = keySystem;
       return Promise.resolve(mockMediaKeySystemAccess);
+    });
+  }
+
+  function setDecodingInfoSpy(acceptableKeySystems) {
+    decodingInfoSpy.and.callFake((config) => {
+      const keySystem = config && config.keySystemConfiguration ?
+          config.keySystemConfiguration.keySystem : null;
+      let res;
+      if (!config.keySystemConfiguration) {
+        // Unencrypted content, return supported decodingInfo.
+        res = {supported: true};
+      } else if (!acceptableKeySystems.includes(keySystem)) {
+        res = {supported: false};
+      } else {
+        mockMediaKeySystemAccess.keySystem = keySystem;
+        res = {
+          supported: true,
+          keySystemAccess: mockMediaKeySystemAccess,
+        };
+      }
+      return Promise.resolve(res);
     });
   }
 
@@ -2216,6 +2333,7 @@ describe('DrmEngine', () => {
       persistentStateRequired: false,
       serverCertificate: serverCert,
       individualizationServer: '',
+      sessionType: '',
       videoRobustness: '',
     };
   }

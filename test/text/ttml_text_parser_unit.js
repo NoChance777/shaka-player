@@ -1055,12 +1055,35 @@ describe('TtmlTextParser', () => {
         'xmlns:ttm="http://www.w3.org/ns/ttml#metadata" ' +
         'xmlns:smpte="http://www.smpte-ra.org/schemas/2052-1/2010/smpte-tt">' +
         '<metadata>' +
-        '<smpte:image imagetype="PNG" encoding="Base64" xml:id="img_0">' +
+        '<smpte:image imageType="PNG" encoding="Base64" xml:id="img_0">' +
         'base64EncodedImage</smpte:image>' +
         '</metadata>' +
         '<body><div smpte:backgroundImage="#img_0">' +
         '<p begin="01:02.05" end="01:02:03.200"></p>' +
         '</div></body></tt>',
+        {periodStart: 0, segmentStart: 0, segmentEnd: 0});
+  });
+
+  it('supports smpte:backgroundImage attribute in div element', () => {
+    verifyHelper(
+        [
+          {
+            startTime: 0,
+            endTime: 62.05,
+            payload: '',
+            backgroundImage: 'data:image/png;base64,base64EncodedImage',
+          },
+        ],
+        '<tt ' +
+        'xmlns:ttm="http://www.w3.org/ns/ttml#metadata" ' +
+        'xmlns:smpte="http://www.smpte-ra.org/schemas/2052-1/2010/smpte-tt">' +
+        '<metadata>' +
+        '<smpte:image imageType="PNG" encoding="Base64" xml:id="img_0">' +
+        'base64EncodedImage</smpte:image>' +
+        '</metadata>' +
+        '<body><div begin="00:00.00" end="01:02.05" '+
+        'smpte:backgroundImage="#img_0"></div>' +
+        '</body></tt>',
         {periodStart: 0, segmentStart: 0, segmentEnd: 0});
   });
 
@@ -1078,7 +1101,7 @@ describe('TtmlTextParser', () => {
         'xmlns:ttm="http://www.w3.org/ns/ttml#metadata" ' +
         'xmlns:smpte="http://www.smpte-ra.org/schemas/2052-1/2013/smpte-tt">' +
         '<metadata>' +
-        '<smpte:image imagetype="PNG" encoding="Base64" xml:id="img_0">' +
+        '<smpte:image imageType="PNG" encoding="Base64" xml:id="img_0">' +
         'base64EncodedImage</smpte:image>' +
         '</metadata>' +
         '<body><div>' +

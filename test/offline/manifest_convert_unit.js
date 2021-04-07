@@ -101,6 +101,7 @@ describe('ManifestConverter', () => {
           audioRobustness: 'very',
           videoRobustness: 'kinda_sorta',
           serverCertificate: new Uint8Array([1, 2, 3]),
+          sessionType: '',
           initData: [{
             initData: new Uint8Array([4, 5, 6]),
             initDataType: 'cenc',
@@ -365,6 +366,7 @@ describe('ManifestConverter', () => {
       audioSamplingRate: null,
       spatialAudio: false,
       closedCaptions: null,
+      tilesLayout: undefined,
     };
   }
 
@@ -413,6 +415,7 @@ describe('ManifestConverter', () => {
       audioSamplingRate: null,
       spatialAudio: false,
       closedCaptions: null,
+      tilesLayout: undefined,
     };
   }
 
@@ -460,6 +463,7 @@ describe('ManifestConverter', () => {
       audioSamplingRate: null,
       spatialAudio: false,
       closedCaptions: null,
+      tilesLayout: undefined,
     };
   }
 
@@ -504,6 +508,7 @@ describe('ManifestConverter', () => {
       audioSamplingRate: streamDb.audioSamplingRate,
       spatialAudio: streamDb.spatialAudio,
       closedCaptions: streamDb.closedCaptions,
+      tilesLayout: streamDb.tilesLayout,
     };
 
     expect(stream).toEqual(expectedStream);

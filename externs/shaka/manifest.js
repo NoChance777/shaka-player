@@ -15,6 +15,7 @@
  *   presentationTimeline: !shaka.media.PresentationTimeline,
  *   variants: !Array.<shaka.extern.Variant>,
  *   textStreams: !Array.<shaka.extern.Stream>,
+ *   imageStreams: !Array.<shaka.extern.Stream>,
  *   offlineSessionIds: !Array.<string>,
  *   minBufferTime: number
  * }}
@@ -60,6 +61,9 @@
  * @property {!Array.<shaka.extern.Stream>} textStreams
  *   <i>Required.</i> <br>
  *   The presentation's text streams.
+ * @property {!Array.<shaka.extern.Stream>} imageStreams
+ *   <i>Required.</i> <br>
+ *   The presentation's image streams
  * @property {!Array.<string>} offlineSessionIds
  *   <i>Defaults to [].</i> <br>
  *   An array of EME sessions to load for offline playback.
@@ -107,6 +111,7 @@ shaka.extern.InitDataOverride;
  *   audioRobustness: string,
  *   videoRobustness: string,
  *   serverCertificate: Uint8Array,
+ *   sessionType: string,
  *   initData: Array.<!shaka.extern.InitDataOverride>,
  *   keyIds: Set.<string>
  * }}
@@ -128,6 +133,9 @@ shaka.extern.InitDataOverride;
  *   <i>Defaults to false.  Can be filled in by advanced DRM config.</i> <br>
  *   True if the application requires the key system to support persistent
  *   state, e.g., for persistent license storage.
+ * @property {string} sessionType
+ *   <i>Defaults to 'temporary' if Shaka wasn't initiated for storage.
+ *   Can be filled in by advanced DRM config sessionType parameter.</i> <br>
  * @property {string} audioRobustness
  *   <i>Defaults to '', e.g., no specific robustness required.  Can be filled in
  *   by advanced DRM config.</i> <br>
@@ -164,7 +172,8 @@ shaka.extern.DrmInfo;
  *   video: ?shaka.extern.Stream,
  *   bandwidth: number,
  *   allowedByApplication: boolean,
- *   allowedByKeySystem: boolean
+ *   allowedByKeySystem: boolean,
+ *   decodingInfos: !Array.<MediaCapabilitiesDecodingInfo>
  * }}
  *
  * @description
@@ -199,6 +208,10 @@ shaka.extern.DrmInfo;
  *   <i>Defaults to true.</i><br>
  *   Set by the Player to indicate whether the variant is allowed to be played
  *   by the key system.
+ * @property {!Array.<MediaCapabilitiesDecodingInfo>} decodingInfos
+ *   <i>Defaults to [].</i><br>
+ *   Set by StreamUtils to indicate the results from MediaCapabilities
+ *   decodingInfo.
  *
  * @exportDoc
  */
@@ -244,7 +257,8 @@ shaka.extern.CreateSegmentIndexFunction;
  *   channelsCount: ?number,
  *   audioSamplingRate: ?number,
  *   spatialAudio: boolean,
- *   closedCaptions: Map.<string, string>
+ *   closedCaptions: Map.<string, string>,
+ *   tilesLayout: (string|undefined)
  * }}
  *
  * @description
@@ -346,6 +360,11 @@ shaka.extern.CreateSegmentIndexFunction;
  *   as the value. If the channel number is not provided by the description,
  *   we'll set an 0-based index as the key.
  *   Example: {'CC1': 'eng'; 'CC3': 'swe'}, or {'1', 'eng'; '2': 'swe'}, etc.
+ * @property {(string|undefined)} tilesLayout
+ *   <i>Image streams only.</i> <br>
+ *   The value is a grid-item-dimension consisting of two positive decimal
+ *   integers in the format: column-x-row ('4x3'). It describes the arrangement
+ *   of Images in a Grid. The minimum valid LAYOUT is '1x1'.
  * @exportDoc
  */
 shaka.extern.Stream;
